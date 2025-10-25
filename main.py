@@ -12,8 +12,11 @@ class HomePage(tk.Frame):
         self.pack(fill="both", expand=True)  
         tk.Label(self, text="Home", anchor="w").pack(pady=5, padx=10, anchor="w")
         tk.Label(self, text="Welcome to Syllearn", font=("Helvetica", 24)).pack(pady=20) 
-        tk.Button(self, text="Upload Syllabus", command=self.ExtractPDF).pack(pady=10)
-    
+        tk.Button(self, text="Upload Syllabus", command=self.ExtractPDF).pack(pady=10)      
+        self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=30)
+        self.text_area.pack(pady=10)
+        
+        
     def ExtractPDF(self):
         file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf"), ("Image files", "*.png;*.jpg;*.jpeg")])
         global SyllabusText
@@ -24,9 +27,12 @@ class HomePage(tk.Frame):
                     text += page.get_text()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to extract text: {e}")
-        SearchText = "The following is the syllabus of a student's course. Please extract the beginning and ending to the syllabus ONLY. Do not return anything else. This is due to some syllabuses having additional information. Syllabus:" + text
-        SyllabusText = openai_client.OpenAIClient().Request(SearchText) 
-            
+        SearchText = "The following is the syllabus of a student's course. Imagine you are a teacher trying to figure out what to teach students. Please extract the actual content of the syllabus ONLY. This means you do not have to mention exactly what part of the syllabus it is. No need overview or anything. Just pure content. This means removing redundant information. Do not return anything else. This is due to some syllabuses having additional information. Please return full content of the actual syllabus though. No removing information from the syllabus. Every bullet point. ADD A HEADER FIRST THINGS FIRST REPRESENTING THE NAME OF THE SYLLABUS AND THE SUBJECT. GIVE 2 ENTER SPACES AFTER THAT. Syllabus:" + text
+        SyllabusText = openai_client.OpenAIClient().Request(SearchText)    
+        self.text_area.config(state="normal")
+        self.text_area.insert(tk.END, SyllabusText)       
+        self.text_area.config(state="disabled") 
+        
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
