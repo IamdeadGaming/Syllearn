@@ -28,7 +28,7 @@ class HomePage(tk.Frame):
         self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=30)
         self.text_area.pack(pady=10)
         self.text_area.config(state="disabled")
-        tk.Button(self, text="Confirm syllabus content", command=self.ParseSyllabus()).pack(pady=5)
+        tk.Button(self, text="Confirm syllabus content", command=self.StartParseSyllabus).pack(pady=5)
         tk.Button(self, text="Reanalyze syllabus content", command=self.ReanalyzeSyllabus).pack(pady=5)
         
     def ShowLoadingWindow(self, LoadingText):
@@ -83,11 +83,19 @@ class HomePage(tk.Frame):
                 
     def SaveSyllabusAsJSON(self, SyllabusJSON, SyllabusTitle):
         filename = f"{SyllabusTitle}.json"
-        path = Path(user_data_dir(APP_NAME, APP_AUTHOR)).mkdir(parents=True, exist_ok=True)/filename
+        directory = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / filename
         with open(path, "w", encoding="utf-8") as f:
             json.dump(SyllabusJSON, f, ensure_ascii=False, indent=2)
             
-    async def ParseSyllabus(self):
+    def StartParseSyllabus(self):
+        self.ShowLoadingWindow("Parsing Syllabus to JSON")
+        thread = threading.Thread(target=self.ParseSyllabus)
+        thread.daemon = True
+        thread.start()
+
+    def ParseSyllabus(self):
         prompt = """You are a curriculum planner. Parse the following SYLLABUS_TEXT into structured JSON using this format. Do not deviate from the format or add additional explanation. ONLY RETURN VALID JSON in the exact format specified below:
 
 {
@@ -100,7 +108,6 @@ class HomePage(tk.Frame):
         {
           "title": "<subchapter title>",
           "bullets": ["<key idea 1>", "<key idea 2>", "<key idea 3>"],
-          "example_problem": "<one example problem>",
           "raw_text": "<original subchapter text>"
         }
       ],
@@ -118,17 +125,22 @@ Rules:
 - Use clear, concise titles.
 
 Now, here is the syllabus text to structure:
-""" + Syllabuses[-1]
-        self.ShowLoadingWindow("Parsing Syllabus to JSON")
+"""
+
+
+        prompt = prompt + Syllabuses[-1]
         ParsedSyllabus = openai_client.OpenAIClient().Request(prompt)
         try:
             ParsedSyllabusJSON = json.loads(ParsedSyllabus)
         except Exception:
             m = re.search(r'(\{.*\})', ParsedSyllabus, flags=re.S)
             if not m:
+                self.master.after(0, self.closeLoadingWindow)
                 raise RuntimeError("LLM did not produce valid JSON output:\n" + ParsedSyllabus[:500])
             ParsedSyllabusJSON = json.loads(m.group(1))
-        self.closeLoadingWindow()
+
+        self.master.after(0, self.closeLoadingWindow)
+
         title = None
         for line in ParsedSyllabus.splitlines():
             line = line.strip()
