@@ -25,7 +25,7 @@ class HomePage(tk.Frame):
         tk.Label(self, text="Home", anchor="w").pack(pady=5, padx=10, anchor="w")
         tk.Label(self, text="Welcome to Syllearn", font=("Helvetica", 24)).pack(pady=20) 
         tk.Button(self, text="Upload Syllabus", command=self.ExtractPDF).pack(pady=10)      
-        self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=100, height=30)
+        self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=30)
         self.text_area.pack(pady=10)
         self.text_area.config(state="disabled")
         tk.Button(self, text="Confirm syllabus content", command=self.ParseSyllabus()).pack(pady=5)
