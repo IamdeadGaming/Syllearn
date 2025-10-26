@@ -1,16 +1,14 @@
 import tkinter as tk
-import os
-from tkinter import scrolledtext, filedialog, messagebox
-from PIL import Image, ImageTk
 import openai_client
 import fitz
 import threading
 import json
 import re
-import asyncio
 from pathlib import Path
 from datetime import datetime
 from platformdirs import user_data_dir
+from tkinter import scrolledtext, filedialog, messagebox
+from PIL import Image, ImageTk
 
 global text
 global Syllabuses
