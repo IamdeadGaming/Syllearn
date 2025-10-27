@@ -15,7 +15,15 @@ global Syllabuses
 Syllabuses = []
 APP_NAME = "Syllearn"
 APP_AUTHOR = "GA Studios"
+cSI = 0 #Current Syllabus Index
 
+class Syllabus:
+    def __init__(self, OriginalText):
+        self.OriginalText = OriginalText
+        self.content = ""
+        self.title = ""
+        self.JSONContent = {}                
+        
 class HomePage(tk.Frame):
     def __init__(self, master):
         super().__init__(master)
@@ -54,14 +62,14 @@ class HomePage(tk.Frame):
     def ProcessSyllabus(self, text):
         prompt = f"The following is the syllabus of a student's course. Imagine you are a teacher trying to figure out what to teach students. Please extract the actual content of the syllabus ONLY. This means you do not have to mention exactly what part of the syllabus it is, no need how the assesment works, etc.. No need overview or anything. Just pure content. For example: 1. Topic x [enter] - SUBTOPIC WITH SMALL EXPLANATION [enter] - SUBTOPIC WITH SMALL EXPLANATION and so on This means removing redundant information. Do not return anything else. This is due to some syllabuses having additional information. Please return full content of the actual syllabus though. No removing information from the syllabus. Every bullet point. ADD A HEADER FIRST THINGS FIRST REPRESENTING THE NAME OF THE SYLLABUS AND THE SUBJECT. GIVE 2 ENTER SPACES AFTER THAT. Syllabus:\n\n{text}"
         SyllasbusText = openai_client.OpenAIClient().Request(prompt)
-        Syllabuses.append(SyllasbusText)
+        Syllabuses[cSI].content = SyllasbusText
         self.master.after(0, self.UpdateTextArea, SyllasbusText)
         self.master.after(0, self.closeLoadingWindow)
     
     def ReanalyzeSyllabus(self):
         self.ShowLoadingWindow("Reanalyzing Syllabus")
-        Syllabuses.pop()
-        thread = threading.Thread(target=self.ProcessSyllabus, args=(self.current_text,))
+        Syllabuses[cSI].content = ""
+        thread = threading.Thread(target=self.ProcessSyllabus, args=(self.CurrentText,))
         thread.daemon = True
         thread.start()
     
@@ -69,13 +77,14 @@ class HomePage(tk.Frame):
         file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf"), ("Image files", "*.png;*.jpg;*.jpeg")])
         if file_path:
             try:
-                text = ""
+                Syllabuses.append(Syllabus(OriginalText=""))
+                cSI = len(Syllabuses) - 1
                 for page in fitz.open(file_path):
-                    text += page.get_text()
-                self.current_text = text
+                    Syllabuses[cSI].OriginalText += page.get_text()
+                self.CurrentText = Syllabuses[cSI].OriginalText
                 self.ShowLoadingWindow("Processing Syllabus")
                 
-                thread = threading.Thread(target=self.ProcessSyllabus, args=(text,))
+                thread = threading.Thread(target=self.ProcessSyllabus, args=(Syllabuses[cSI].OriginalText,))
                 thread.daemon = True
                 thread.start()
             except Exception as e:
@@ -128,7 +137,7 @@ Now, here is the syllabus text to structure:
 """
 
 
-        prompt = prompt + Syllabuses[-1]
+        prompt = prompt + Syllabuses[cSI].content
         ParsedSyllabus = openai_client.OpenAIClient().Request(prompt)
         try:
             ParsedSyllabusJSON = json.loads(ParsedSyllabus)
@@ -142,15 +151,20 @@ Now, here is the syllabus text to structure:
         self.master.after(0, self.closeLoadingWindow)
 
         title = None
-        for line in ParsedSyllabus.splitlines():
-            line = line.strip()
-            if line:
-                title = line
-                break
+        lines = Syllabuses[cSI].content.splitlines()
+        if lines:
+            title = lines[0].strip()
+            if not title:  
+                for line in lines:
+                    if line.strip():
+                        title = line.strip()
+                        break
+        
         if not title:
             title = datetime.now().strftime("syllabus_%Y%m%d_%H%M%S")
-        SafeTitle = re.sub(r'[<>:"/\\\\|?*\\n\\r\\t]', '_', title)[:120]
-        self.SaveSyllabusAsJSON(ParsedSyllabusJSON, SafeTitle)
+            
+        Syllabuses[cSI].title = re.sub(r'[<>:"/\\|?*]', '_', title)[:120]  
+        self.SaveSyllabusAsJSON(ParsedSyllabusJSON, Syllabuses[cSI].title)
         
                    
         
