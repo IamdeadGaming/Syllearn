@@ -22,8 +22,21 @@ class Syllabus:
         self.OriginalText = OriginalText
         self.content = ""
         self.title = ""
-        self.JSONContent = {}                
-        
+        self.JSONContent = {}               
+
+class SectionPage(tk.frame):
+    def __init__(self,master):
+        super().__init__(master)
+        for i in Syllabus[cSI].JSONContent["chapters"]:
+            for j in i["subchapters"]:
+                tk.Button(self, text=j["title"], command=print("a")).pack(pady=2)
+
+class SyllabusPage(tk.frame):
+    def __init__(self,master):
+        super().__init__(master)
+        for i in Syllabuses[cSI].JSONContent["chapters"]:
+            tk.Button(self, text=i["title"], command=print("a")).pack(pady=5)
+
 class HomePage(tk.Frame):
     def __init__(self, master):
         super().__init__(master)
@@ -38,6 +51,8 @@ class HomePage(tk.Frame):
         self.text_area.config(state="disabled")
         tk.Button(self, text="Confirm syllabus content", command=self.StartParseSyllabus).pack(pady=5)
         tk.Button(self, text="Reanalyze syllabus content", command=self.ReanalyzeSyllabus).pack(pady=5)
+        for i in len(Syllabuses):
+            tk.Button(self, text=Syllabuses[i].title, command=print("a")).pack(pady=5, padx=10, anchor = "w")
         
     def ShowLoadingWindow(self, LoadingText):
         self.loading_window = tk.Toplevel(self)
@@ -96,7 +111,8 @@ class HomePage(tk.Frame):
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / filename
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(SyllabusJSON, f, ensure_ascii=False, indent=2)
+            json.dump(SyllabusJSON, f, ensure_ascii=False, indent=4)
+            Syllabuses[cSI].JSONContent = SyllabusJSON
             
     def StartParseSyllabus(self):
         self.ShowLoadingWindow("Parsing Syllabus to JSON")
