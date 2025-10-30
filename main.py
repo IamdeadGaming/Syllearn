@@ -24,14 +24,14 @@ class Syllabus:
         self.title = ""
         self.JSONContent = {}               
 
-class SectionPage(tk.frame):
+class SectionPage(tk.Frame):
     def __init__(self,master):
         super().__init__(master)
         for i in Syllabus[cSI].JSONContent["chapters"]:
             for j in i["subchapters"]:
                 tk.Button(self, text=j["title"], command=print("a")).pack(pady=2)
 
-class SyllabusPage(tk.frame):
+class SyllabusPage(tk.Frame):
     def __init__(self,master):
         super().__init__(master)
         for i in Syllabuses[cSI].JSONContent["chapters"]:
@@ -51,7 +51,7 @@ class HomePage(tk.Frame):
         self.text_area.config(state="disabled")
         tk.Button(self, text="Confirm syllabus content", command=self.StartParseSyllabus).pack(pady=5)
         tk.Button(self, text="Reanalyze syllabus content", command=self.ReanalyzeSyllabus).pack(pady=5)
-        for i in len(Syllabuses):
+        for i in enumerate(Syllabuses):
             tk.Button(self, text=Syllabuses[i].title, command=print("a")).pack(pady=5, padx=10, anchor = "w")
         
     def ShowLoadingWindow(self, LoadingText):

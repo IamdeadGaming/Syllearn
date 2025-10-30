@@ -1,8 +1,13 @@
 from dotenv import load_dotenv
 import os
 from openai import OpenAI
+from pathlib import Path
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-load_dotenv()  
+#ROOT = Path(__file__).resolve().parent
+#load_dotenv(ROOT.parent / ".env")  
+load_dotenv(".env")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY missing")    
