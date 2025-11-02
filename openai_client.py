@@ -5,6 +5,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+#https://bqejpjyrpcqqgtvxeeds.supabase.co
 #ROOT = Path(__file__).resolve().parent
 #load_dotenv(ROOT.parent / ".env")  
 load_dotenv(".env")
