@@ -76,7 +76,7 @@ class HomePage(tk.Frame):
         
     def ProcessSyllabus(self, text):
         prompt = f"The following is the syllabus of a student's course. Imagine you are a teacher trying to figure out what to teach students. Please extract the actual content of the syllabus ONLY. This means you do not have to mention exactly what part of the syllabus it is, no need how the assesment works, etc.. No need overview or anything. Just pure content. For example: 1. Topic x [enter] - SUBTOPIC WITH SMALL EXPLANATION [enter] - SUBTOPIC WITH SMALL EXPLANATION and so on This means removing redundant information. Do not return anything else. This is due to some syllabuses having additional information. Please return full content of the actual syllabus though. No removing information from the syllabus. Every bullet point. ADD A HEADER FIRST THINGS FIRST REPRESENTING THE NAME OF THE SYLLABUS AND THE SUBJECT. GIVE 2 ENTER SPACES AFTER THAT. Syllabus:\n\n{text}"
-        SyllasbusText = openai_client.OpenAIClient().Request(prompt)
+        SyllasbusText = openai_client.Request(prompt)
         Syllabuses[cSI].content = SyllasbusText
         self.master.after(0, self.UpdateTextArea, SyllasbusText)
         self.master.after(0, self.closeLoadingWindow)
@@ -154,7 +154,7 @@ Now, here is the syllabus text to structure:
 
 
         prompt = prompt + Syllabuses[cSI].content
-        ParsedSyllabus = openai_client.OpenAIClient().Request(prompt)
+        ParsedSyllabus = openai_client.Request(prompt)
         try:
             ParsedSyllabusJSON = json.loads(ParsedSyllabus)
         except Exception:
