@@ -25,17 +25,16 @@ class Syllabus:
         self.JSONContent = {}               
 
 class SectionPage(tk.Frame):
-    def __init__(self,master):
+    def __init__(self,master, i):
         super().__init__(master)
-        for i in Syllabus[cSI].JSONContent["chapters"]:
-            for j in i["subchapters"]:
-                tk.Button(self, text=j["title"], command=print("a")).pack(pady=2)
+        for j in i["subchapters"]:
+            tk.Button(self, text=j["title"], command=print("a")).pack(pady=2)
 
 class SyllabusPage(tk.Frame):
     def __init__(self,master):
         super().__init__(master)
         for i in Syllabuses[cSI].JSONContent["chapters"]:
-            tk.Button(self, text=i["title"], command=print("a")).pack(pady=5)
+            tk.Button(self, text=i["title"], command=lambda chapter=i: self.master.show_section_page(chapter)).pack(pady=5)
 
 class HomePage(tk.Frame):
     def __init__(self, master):
@@ -51,9 +50,7 @@ class HomePage(tk.Frame):
         self.text_area.config(state="disabled")
         tk.Button(self, text="Confirm syllabus content", command=self.StartParseSyllabus).pack(pady=5)
         tk.Button(self, text="Reanalyze syllabus content", command=self.ReanalyzeSyllabus).pack(pady=5)
-        for i in enumerate(Syllabuses):
-            tk.Button(self, text=Syllabuses[i].title, command=print("a")).pack(pady=5, padx=10, anchor = "w")
-        
+             
     def ShowLoadingWindow(self, LoadingText):
         self.loading_window = tk.Toplevel(self)
         self.loading_window.title("Loading")
@@ -113,6 +110,7 @@ class HomePage(tk.Frame):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(SyllabusJSON, f, ensure_ascii=False, indent=4)
             Syllabuses[cSI].JSONContent = SyllabusJSON
+        tk.Button(self, text=Syllabuses[-1].title, command=lambda: self.master.show_syllabus_page()).pack(pady=5, padx=10, anchor="w")
             
     def StartParseSyllabus(self):
         self.ShowLoadingWindow("Parsing Syllabus to JSON")
@@ -189,8 +187,40 @@ class App(tk.Tk):
         super().__init__()
         self.title("Syllearn")
         self.geometry("800x1000")
-        self.home_page = HomePage(self)  
+        self.pages = {}
+        self.home_page = HomePage(self)
+        self.pages['home'] = self.home_page
+        self.current_page = self.home_page
         
+    def show_syllabus_page(self):
+        syllabus_id = Syllabuses[cSI].title
+        if f'syllabus_{syllabus_id}' not in self.pages:
+            syllabus_page = SyllabusPage(self)
+            tk.Button(syllabus_page, 
+                     text="Back to Home", 
+                     command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
+            self.pages[f'syllabus_{syllabus_id}'] = syllabus_page
+        self.current_page.pack_forget()
+        self.pages[f'syllabus_{syllabus_id}'].pack(fill="both", expand=True)
+        self.current_page = self.pages[f'syllabus_{syllabus_id}']
+
+    def show_section_page(self, i):
+        section_id = i["title"]
+        if f'section_{section_id}' not in self.pages:
+            section_page = SectionPage(self, i)
+            tk.Button(section_page, 
+                     text="Back to Home", 
+                     command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
+            self.pages[f'section_{section_id}'] = section_page
+        self.current_page.pack_forget()
+        self.pages[f'section_{section_id}'].pack(fill="both", expand=True)
+        self.current_page = self.pages[f'section_{section_id}']
+
+    def return_to_home(self):
+        self.current_page.pack_forget()
+        self.home_page.pack(fill="both", expand=True)
+        self.current_page = self.home_page
+
     
 if __name__ == "__main__":
     app = App()
