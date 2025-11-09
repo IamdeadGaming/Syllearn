@@ -24,11 +24,21 @@ class Syllabus:
         self.title = ""
         self.JSONContent = {}               
 
+class LearningPage(tk.Frame):
+    def __init__(self,master,isExplanation: bool, j):
+        super().__init__(master)
+        tk.Label(self, text="Learning Page").pack()
+        if isExplanation:
+            openai_client.Request(f"")
+        else:
+            openai_client.Request("Generate questions based on the syllabus content.")
+            
+
 class SectionPage(tk.Frame):
     def __init__(self,master, i):
         super().__init__(master)
         for j in i["subchapters"]:
-            tk.Button(self, text=j["title"], command=print("a")).pack(pady=2)
+            tk.Button(self, text=j["title"], command=lambda subchapter: self.master.show_learning_page(subchapter)).pack(pady=2)
 
 class SyllabusPage(tk.Frame):
     def __init__(self,master):
@@ -208,13 +218,29 @@ class App(tk.Tk):
         section_id = i["title"]
         if f'section_{section_id}' not in self.pages:
             section_page = SectionPage(self, i)
-            tk.Button(section_page, 
-                     text="Back to Home", 
-                     command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
+            tk.Button(section_page, text="Back to Home", command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
             self.pages[f'section_{section_id}'] = section_page
         self.current_page.pack_forget()
         self.pages[f'section_{section_id}'].pack(fill="both", expand=True)
         self.current_page = self.pages[f'section_{section_id}']
+        
+    def show_learning_page(self, j):
+        learn_id = j["title"]
+        if f'section_{learn_id}' not in self.pages:
+            learn_page = LearningPage(self, True, j)
+        else:
+            for k in j["bullets"]:
+                if f'section_{k}' not in self.pages:
+                    learn_id = j["title"]["bullet"][k]
+                    learn_page = LearningPage(self, False, j)
+                    break
+                else:
+                    continue
+        tk.Button(learn_page, text="Back to Home", command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
+        self.pages[f'learn_{learn_id}'] = learn_page
+        self.current_page.pack_forget()
+        self.pages[f'learn_{learn_id}'].pack(fill="both", expand=True)
+        self.current_page = self.pages[f'learn_{learn_id}']
 
     def return_to_home(self):
         self.current_page.pack_forget()
