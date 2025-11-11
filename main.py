@@ -38,7 +38,7 @@ class LearningPage(tk.Frame):
             tk.Label(self, text="Question:").pack(pady=5)
             question_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=10)
             question_area.pack(pady=10)
-            question_area.insert(tk.END, text)
+            question_area.insert(tk.END, text["question"])
             question_area.config(state="disabled")
             
 class SectionPage(tk.Frame):
@@ -233,23 +233,26 @@ class App(tk.Tk):
         
     def show_learning_page(self, j):
         learn_id = j["title"]
-        if f'section_{learn_id}' not in self.pages:
-            learn_page = LearningPage(self, True, j)
-        else:
-            for k in j["bullets"]:
-                if f'section_{k}' not in self.pages:
-                    learn_id = k
-                    text = openai_client.Request(f"Based on the following syllabus content, provide a detailed explanation for it: {k}")
-                    learn_page = LearningPage(self, True, k, text)
-                    self.pages[f'learn_{k}_explanation'] = learn_page
-                    number_questions = int(openai_client.Request(f"Based on the following syllabus content, generate a number between 3 and 6 representing how many questions can be made from it: {k}"))
-                    for _ in range(number_questions):
-                        text = openai_client.Request(f"Based on the following syllabus content, generate a question that tests understanding of it: {k}")
-                        questions_page = LearningPage(self, False, k, text)
-                        self.pages[f'learn_{k}_question_{_}'] = questions_page
-                    break
-                else:
-                    continue
+        for k in j["bullets"]:
+            if f'section_{k}' not in self.pages:
+                learn_id = k
+                text = openai_client.Request(f"Based on the following syllabus content, provide a detailed explanation for it: {k}")
+                learn_page = LearningPage(self, True, k, text)
+                self.pages[f'learn_{k}_explanation'] = learn_page
+                number_questions = int(openai_client.Request(f"Based on the following syllabus content, generate a number between 3 and 6 representing how many questions can be made from it. Only return THE NUMBER ONLY. NO ADDITIONALS: {k}"))
+                for _ in range(number_questions):
+                    text = openai_client.Request(f"""Based on the following syllabus content, generate a (ONE) question that tests understanding of it: {k}
+Use the following format and return a JSON object ONLY nothing else:
+{{
+  "question": "<the question text>",
+  "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"],
+  "answer": "<the correct option>"
+}}""")
+                    questions_page = LearningPage(self, False, k, text)
+                    self.pages[f'learn_{k}_question_{_}'] = questions_page
+                break
+            else:
+                continue
         tk.Button(learn_page, text="Back to Home", command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
         self.pages[f'learn_{learn_id}'] = learn_page
         self.current_page.pack_forget()
