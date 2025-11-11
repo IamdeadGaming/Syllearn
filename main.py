@@ -25,20 +25,27 @@ class Syllabus:
         self.JSONContent = {}               
 
 class LearningPage(tk.Frame):
-    def __init__(self,master,isExplanation: bool, j):
+    def __init__(self,master,isExplanation: bool, j, text: str):
         super().__init__(master)
         tk.Label(self, text="Learning Page").pack()
         if isExplanation:
-            openai_client.Request(f"")
+            tk.Label(self, text="Explanation:").pack(pady=5)
+            explanation_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=30)
+            explanation_area.pack(pady=10)
+            explanation_area.insert(tk.END, text)
+            explanation_area.config(state="disabled")
         else:
-            openai_client.Request("Generate questions based on the syllabus content.")
+            tk.Label(self, text="Question:").pack(pady=5)
+            question_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=10)
+            question_area.pack(pady=10)
+            question_area.insert(tk.END, text)
+            question_area.config(state="disabled")
             
-
 class SectionPage(tk.Frame):
     def __init__(self,master, i):
         super().__init__(master)
         for j in i["subchapters"]:
-            tk.Button(self, text=j["title"], command=lambda subchapter: self.master.show_learning_page(subchapter)).pack(pady=2)
+            tk.Button(self, text=j["title"], command=lambda subchapter=j: self.master.show_learning_page(subchapter)).pack(pady=2)
 
 class SyllabusPage(tk.Frame):
     def __init__(self,master):
@@ -231,8 +238,15 @@ class App(tk.Tk):
         else:
             for k in j["bullets"]:
                 if f'section_{k}' not in self.pages:
-                    learn_id = j["title"]["bullet"][k]
-                    learn_page = LearningPage(self, False, j)
+                    learn_id = k
+                    text = openai_client.Request(f"Based on the following syllabus content, provide a detailed explanation for it: {k}")
+                    learn_page = LearningPage(self, True, k, text)
+                    self.pages[f'learn_{k}_explanation'] = learn_page
+                    number_questions = int(openai_client.Request(f"Based on the following syllabus content, generate a number between 3 and 6 representing how many questions can be made from it: {k}"))
+                    for _ in range(number_questions):
+                        text = openai_client.Request(f"Based on the following syllabus content, generate a question that tests understanding of it: {k}")
+                        questions_page = LearningPage(self, False, k, text)
+                        self.pages[f'learn_{k}_question_{_}'] = questions_page
                     break
                 else:
                     continue
