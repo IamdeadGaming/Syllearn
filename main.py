@@ -236,18 +236,18 @@ class App(tk.Tk):
         for k in j["bullets"]:
             if f'section_{k}' not in self.pages:
                 learn_id = k
-                text = openai_client.Request(f"Based on the following syllabus content, provide a detailed explanation for it: {k}")
+                text = openai_client.Request(f"Based on the following syllabus content, provide a detailed explanation for it, including its ins and outs. ONLY RETURN THE EXPLANATION NOTHING ELSE: {k}")
                 learn_page = LearningPage(self, True, k, text)
                 self.pages[f'learn_{k}_explanation'] = learn_page
                 number_questions = int(openai_client.Request(f"Based on the following syllabus content, generate a number between 3 and 6 representing how many questions can be made from it. Only return THE NUMBER ONLY. NO ADDITIONALS: {k}"))
                 for _ in range(number_questions):
-                    text = openai_client.Request(f"""Based on the following syllabus content, generate a (ONE) question that tests understanding of it: {k}
+                    text = json.loads(openai_client.Request(f"""Based on the following syllabus content, generate a (ONE) question that tests understanding of it: {k}
 Use the following format and return a JSON object ONLY nothing else:
 {{
   "question": "<the question text>",
   "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"],
   "answer": "<the correct option>"
-}}""")
+}}"""))
                     questions_page = LearningPage(self, False, k, text)
                     self.pages[f'learn_{k}_question_{_}'] = questions_page
                 break
