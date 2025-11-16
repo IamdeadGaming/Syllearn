@@ -9,7 +9,6 @@ import subprocess
 import re
 from platformdirs import user_data_dir
 
-OPENAI_PROXY_URL = "https://YOUR_PROJECT.supabase.co/functions/v1/YOUR_FUNCTION"
 VOICE = "en-US-GuyNeural"
 QUALITY = "medium"
 OUTPUT_DIR = "output"
@@ -89,7 +88,6 @@ class VideoGenerator:
             return None
     
     def generate_audio(self):
-        """Generate audio narration using Coqui TTS by default, then Azure TTS, then gTTS fallback"""
         if not self.script:
             raise ValueError("Script not generated. Call generate_script() first.")
         
@@ -100,7 +98,7 @@ class VideoGenerator:
             if not narration:
                 continue
             
-            audio_file = f"{DIR}/audio_scene_{scene['scene_number']}.wav"
+            audio_file = f"{DIR}/{self.topic}/audio_scene_{scene['scene_number']}.wav"
             used = False
 
             if not used and GTTS_AVAILABLE:
@@ -138,7 +136,6 @@ class VideoGenerator:
             combined.export(self.audio_path, format="mp3")
     
     def generate_manim_scenes(self):
-        """Generate Manim animation scenes"""
         if not self.script:
             raise ValueError("Script not generated. Call generate_script() first.")
         
@@ -196,7 +193,6 @@ class EducationalVideoSequence(Scene):
         return scenes_code
     
     def render_video(self, quality="medium_quality", fps=30):
-        """Render the complete video with audio"""
         if not self.script:
             raise ValueError("Script not generated. Call generate_script() first.")
         
@@ -205,7 +201,7 @@ class EducationalVideoSequence(Scene):
 
         manim_code = self.generate_manim_scenes()
   
-        scene_file = f"{DIR}/scene.py"
+        scene_file = f"{DIR}/{self.topic}/scene.py"
         with open(scene_file, 'w') as f:
             f.write(manim_code)
        
@@ -233,7 +229,6 @@ class EducationalVideoSequence(Scene):
             return None
     
     def add_audio_to_video(self, video_file, output_file):
-        """Combine video and audio using ffmpeg"""
         try:
             cmd = [
                 "ffmpeg",
@@ -254,7 +249,7 @@ class EducationalVideoSequence(Scene):
         except subprocess.CalledProcessError as e:
             print(f"Error adding audio to video: {e}")
 
-def create_educational_video(topic: str, content: str, output_name: str = None):
+def create_video(topic: str, content: str):
     
     generator = VideoGenerator(topic, content)
     

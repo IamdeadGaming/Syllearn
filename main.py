@@ -30,7 +30,7 @@ class LearningPage(tk.Frame):
         super().__init__(master)
         tk.Label(self, text="Learning Page").pack()
         if isExplanation:
-            videogenerator = videogenerator.VideoGenerator(topic=j, content="")
+            video_path = videogenerator.create_video(j, text)
             tk.Label(self, text="Explanation:").pack(pady=5)
             explanation_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=30)
             explanation_area.pack(pady=10)
