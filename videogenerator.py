@@ -6,17 +6,28 @@ from manim import *
 import requests
 from pydub import AudioSegment
 import subprocess
+import re
+from platformdirs import user_data_dir
 
 OPENAI_PROXY_URL = "https://YOUR_PROJECT.supabase.co/functions/v1/YOUR_FUNCTION"
 VOICE = "en-US-GuyNeural"
 QUALITY = "medium"
 OUTPUT_DIR = "output"
-TEMP_DIR = "temp"
-AZURE_TTS_KEY = os.getenv("AZURE_TTS_KEY")  
-AZURE_TTS_REGION = "eastus"
+APP_NAME = "Syllearn"
+APP_AUTHOR = "GA Studios"
+DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
 
 Path(OUTPUT_DIR).mkdir(exist_ok=True)
-Path(TEMP_DIR).mkdir(exist_ok=True)
+Path(DIR).mkdir(exist_ok=True)
+
+
+try:
+    from gtts import gTTS
+    GTTS_AVAILABLE = True
+except Exception:
+    gTTS = None
+    GTTS_AVAILABLE = False
+
 
 class VideoGenerator:
     def __init__(self, topic: str, content: str):
@@ -78,7 +89,7 @@ class VideoGenerator:
             return None
     
     def generate_audio(self):
-        """Generate audio narration using Azure Text-to-Speech"""
+        """Generate audio narration using Coqui TTS by default, then Azure TTS, then gTTS fallback"""
         if not self.script:
             raise ValueError("Script not generated. Call generate_script() first.")
         
@@ -89,49 +100,41 @@ class VideoGenerator:
             if not narration:
                 continue
             
-            headers = {
-                "Ocp-Apim-Subscription-Key": AZURE_TTS_KEY,
-                "Content-Type": "application/ssml+xml"
-            }
-            
-            ssml = f"""<speak version='1.0' xml:lang='en-US'>
-                <voice name='{VOICE}'>
-                    <prosody rate='0.95' pitch='0Hz'>
-                        {narration}
-                    </prosody>
-                </voice>
-            </speak>"""
-            
+            audio_file = f"{DIR}/audio_scene_{scene['scene_number']}.wav"
+            used = False
+
+            if not used and GTTS_AVAILABLE:
+                try:
+                    tts = gTTS(narration, lang="en")
+                    tmp_mp3 = audio_file.replace(".wav", ".mp3")
+                    tts.save(tmp_mp3)
+                    AudioSegment.from_file(tmp_mp3).export(audio_file, format="wav")
+                    os.remove(tmp_mp3)
+                    used = True
+                except Exception as e:
+                    print(f"gTTS failed: {e}")
+
+            if not used:
+                print(f"No TTS backend available for scene {scene['scene_number']}, skipping audio for this scene.")
+                continue
+
             try:
-                response = requests.post(
-                    f"https://{AZURE_TTS_REGION}.tts.speech.microsoft.com/cognitiveservices/v1",
-                    headers=headers,
-                    data=ssml.encode('utf-8'),
-                    timeout=120
-                )
-                
-                if response.status_code == 200:
-                    audio_file = f"{TEMP_DIR}/audio_scene_{scene['scene_number']}.wav"
-                    with open(audio_file, 'wb') as f:
-                        f.write(response.content)
-                    
-                    audio = AudioSegment.from_wav(audio_file)
-                    audio_segments.append(audio)
-                    self.duration += len(audio) / 1000  
-                    
-                    print(f"Generated audio for scene {scene['scene_number']}")
-                else:
-                    print(f"TTS Error: {response.status_code}")
-                    
+                audio = AudioSegment.from_wav(audio_file)
+                audio_segments.append(audio)
+                self.duration += len(audio) / 1000
+                print(f"Generated audio for scene {scene['scene_number']}")
             except Exception as e:
-                print(f"Error generating audio for scene {scene['scene_number']}: {e}")
-        
+                print(f"Failed to load audio for scene {scene['scene_number']}: {e}")
+
         if audio_segments:
             combined = audio_segments[0]
             for segment in audio_segments[1:]:
                 combined += segment
-            
-            self.audio_path = f"{OUTPUT_DIR}_{self.topic}_{self.content}/narration.mp3"
+
+            safe_topic = re.sub(r'[<>:"/\\|?*]', '_', self.topic)[:120]
+            out_dir = Path(OUTPUT_DIR) / f"{safe_topic}"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            self.audio_path = str(out_dir / "narration.mp3")
             combined.export(self.audio_path, format="mp3")
     
     def generate_manim_scenes(self):
@@ -202,7 +205,7 @@ class EducationalVideoSequence(Scene):
 
         manim_code = self.generate_manim_scenes()
   
-        scene_file = f"{TEMP_DIR}/scene.py"
+        scene_file = f"{DIR}/scene.py"
         with open(scene_file, 'w') as f:
             f.write(manim_code)
        
@@ -212,7 +215,7 @@ class EducationalVideoSequence(Scene):
             cmd = [
                 "manim",
                 "-q", quality,
-                "-p",  # preview
+                "-p", 
                 "--fps", str(fps),
                 scene_file,
                 "EducationalVideoSequence"
@@ -220,7 +223,7 @@ class EducationalVideoSequence(Scene):
             
             subprocess.run(cmd, check=True)
 
-            self.add_audio_to_video(f"{TEMP_DIR}/EducationalVideoSequence.mp4", output_file)
+            self.add_audio_to_video(f"{DIR}/EducationalVideoSequence.mp4", output_file)
             
             print(f"Video saved to {output_file}")
             return output_file

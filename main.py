@@ -9,6 +9,7 @@ from datetime import datetime
 from platformdirs import user_data_dir
 from tkinter import scrolledtext, filedialog, messagebox
 from PIL import Image, ImageTk
+import videogenerator
 
 global text
 global Syllabuses
@@ -29,6 +30,7 @@ class LearningPage(tk.Frame):
         super().__init__(master)
         tk.Label(self, text="Learning Page").pack()
         if isExplanation:
+            videogenerator = videogenerator.VideoGenerator(topic=j, content="")
             tk.Label(self, text="Explanation:").pack(pady=5)
             explanation_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=30)
             explanation_area.pack(pady=10)
