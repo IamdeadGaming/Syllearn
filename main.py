@@ -4,12 +4,14 @@ import fitz
 import threading
 import json
 import re
+import os
 from pathlib import Path
 from datetime import datetime
 from platformdirs import user_data_dir
 from tkinter import scrolledtext, filedialog, messagebox
 from PIL import Image, ImageTk
 import videogenerator
+import cv2
 
 global text
 global Syllabuses
@@ -31,6 +33,20 @@ class LearningPage(tk.Frame):
         tk.Label(self, text="Learning Page").pack()
         if isExplanation:
             video_path = videogenerator.create_video(j, text)
+            if video_path and os.path.exists(video_path):
+                self.video_label = tk.Label(self)
+                self.video_label.pack(pady=10)
+                self.cap = cv2.VideoCapture(video_path)
+                self.playing = False
+                self.current_frame = 0
+                self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+                self.delay = int(1000 / self.fps) if self.fps > 0 else 33
+                self.play_button = tk.Button(self, text="Play", command=self.toggle_play)
+                self.play_button.pack(pady=5)
+                self.update_frame()
+            else:
+                tk.Label(self, text="Video generation failed or file not found.").pack(pady=10)
             tk.Label(self, text="Explanation:").pack(pady=5)
             explanation_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=30)
             explanation_area.pack(pady=10)
@@ -42,6 +58,32 @@ class LearningPage(tk.Frame):
             question_area.pack(pady=10)
             question_area.insert(tk.END, text["question"])
             question_area.config(state="disabled")
+
+    def toggle_play(self):
+        self.playing = not self.playing
+        self.play_button.config(text="Pause" if self.playing else "Play")
+        if self.playing:
+            self.update_frame()
+
+    def update_frame(self):
+        if self.playing and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(frame)
+                img = img.resize((640, 360), Image.Resampling.LANCZOS)
+                imgtk = ImageTk.PhotoImage(image=img)
+                self.video_label.imgtk = imgtk
+                self.video_label.config(image=imgtk)
+                self.current_frame += 1
+                if self.current_frame < self.total_frames:
+                    self.after(self.delay, self.update_frame)
+                else:
+                    self.playing = False
+                    self.play_button.config(text="Play")
+            else:
+                self.playing = False
+                self.play_button.config(text="Play")
             
 class SectionPage(tk.Frame):
     def __init__(self,master, i):
@@ -129,7 +171,7 @@ class HomePage(tk.Frame):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(SyllabusJSON, f, ensure_ascii=False, indent=4)
             Syllabuses[cSI].JSONContent = SyllabusJSON
-        tk.Button(self, text=Syllabuses[-1].title, command=lambda: self.master.show_syllabus_page()).pack(pady=5, padx=10, anchor="w")
+        tk.Button(self, text=Syllabuses[-1].title, command=lambda idx=cSI: self.master.show_syllabus_page(idx)).pack(pady=5, padx=10, anchor="w")
             
     def StartParseSyllabus(self):
         self.ShowLoadingWindow("Parsing Syllabus to JSON")
@@ -210,56 +252,74 @@ class App(tk.Tk):
         self.home_page = HomePage(self)
         self.pages['home'] = self.home_page
         self.current_page = self.home_page
+        for filename in Path(user_data_dir(APP_NAME, APP_AUTHOR)).glob("*.json"):
+            syllabus = json.load(open(filename, "r", encoding="utf-8"))
+            Syllabuses.append(Syllabus(OriginalText=""))
+            Syllabuses[-1].JSONContent = syllabus
+            Syllabuses[-1].title = syllabus["syllabus_title"]
+            cSI = len(Syllabuses) - 1
+            tk.Button(self.home_page, text=Syllabuses[cSI].title, command=lambda idx=cSI: self.show_syllabus_page(idx)).pack(pady=5, padx=10, anchor="w")
+            
         
-    def show_syllabus_page(self):
+    def show_syllabus_page(self, idx):
+        global cSI
+        cSI = idx
         syllabus_id = Syllabuses[cSI].title
-        if f'syllabus_{syllabus_id}' not in self.pages:
+        if f'syllabus_{syllabus_id}_{cSI}' not in self.pages:
             syllabus_page = SyllabusPage(self)
-            tk.Button(syllabus_page, 
-                     text="Back to Home", 
+            tk.Button(syllabus_page,
+                     text="Back to Home",
                      command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
-            self.pages[f'syllabus_{syllabus_id}'] = syllabus_page
+            self.pages[f'syllabus_{syllabus_id}_{cSI}'] = syllabus_page
         self.current_page.pack_forget()
-        self.pages[f'syllabus_{syllabus_id}'].pack(fill="both", expand=True)
-        self.current_page = self.pages[f'syllabus_{syllabus_id}']
+        self.pages[f'syllabus_{syllabus_id}_{cSI}'].pack(fill="both", expand=True)
+        self.current_page = self.pages[f'syllabus_{syllabus_id}_{cSI}']
 
     def show_section_page(self, i):
         section_id = i["title"]
-        if f'section_{section_id}' not in self.pages:
+        if f'section_{section_id}_{cSI}' not in self.pages:
             section_page = SectionPage(self, i)
             tk.Button(section_page, text="Back to Home", command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
-            self.pages[f'section_{section_id}'] = section_page
+            self.pages[f'section_{section_id}_{cSI}'] = section_page
         self.current_page.pack_forget()
-        self.pages[f'section_{section_id}'].pack(fill="both", expand=True)
-        self.current_page = self.pages[f'section_{section_id}']
+        self.pages[f'section_{section_id}_{cSI}'].pack(fill="both", expand=True)
+        self.current_page = self.pages[f'section_{section_id}_{cSI}']
         
     def show_learning_page(self, j):
         learn_id = j["title"]
         for k in j["bullets"]:
-            if f'section_{k}' not in self.pages:
+            if f'section_{k}_{cSI}' not in self.pages:
                 learn_id = k
                 text = openai_client.Request(f"Based on the following syllabus content, provide a detailed explanation for it, including its ins and outs. ONLY RETURN THE EXPLANATION NOTHING ELSE: {k}")
                 learn_page = LearningPage(self, True, k, text)
-                self.pages[f'learn_{k}_explanation'] = learn_page
+                self.pages[f'learn_{k}_explanation_{cSI}'] = learn_page
                 number_questions = int(openai_client.Request(f"Based on the following syllabus content, generate a number between 3 and 6 representing how many questions can be made from it. Only return THE NUMBER ONLY. NO ADDITIONALS: {k}"))
                 for _ in range(number_questions):
-                    text = json.loads(openai_client.Request(f"""Based on the following syllabus content, generate a (ONE) question that tests understanding of it: {k}
+                    response = openai_client.Request(f"""Based on the following syllabus content, generate a (ONE) question that tests understanding of it: {k}
 Use the following format and return a JSON object ONLY nothing else:
 {{
   "question": "<the question text>",
   "options": ["<option 1>", "<option 2>", "<option 3>", "<option 4>"],
   "answer": "<the correct option>"
-}}"""))
+}}""")
+                    try:
+                        text = json.loads(response)
+                    except Exception:
+                        m = re.search(r'(\{.*\})', response, flags=re.S)
+                        if not m:
+                            print(f"LLM did not produce valid JSON for question {_}: {response[:500]}")
+                            continue
+                        text = json.loads(m.group(1))
                     questions_page = LearningPage(self, False, k, text)
-                    self.pages[f'learn_{k}_question_{_}'] = questions_page
+                    self.pages[f'learn_{k}_question_{_}_{cSI}'] = questions_page
                 break
             else:
                 continue
         tk.Button(learn_page, text="Back to Home", command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
-        self.pages[f'learn_{learn_id}'] = learn_page
+        self.pages[f'learn_{learn_id}_{cSI}'] = learn_page
         self.current_page.pack_forget()
-        self.pages[f'learn_{learn_id}'].pack(fill="both", expand=True)
-        self.current_page = self.pages[f'learn_{learn_id}']
+        self.pages[f'learn_{learn_id}_{cSI}'].pack(fill="both", expand=True)
+        self.current_page = self.pages[f'learn_{learn_id}_{cSI}']
 
     def return_to_home(self):
         self.current_page.pack_forget()
