@@ -1,0 +1,1 @@
+run "python setup.py" in terminal when first setup. If an error pops up, try to install essential python modules manually
