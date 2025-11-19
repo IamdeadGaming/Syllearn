@@ -99,11 +99,12 @@ class VideoGenerator:
             return self.script
         except Exception as e:
             print(f"Error generating script: {e}")
-            # Try to extract JSON from response
-            m = json.loads(response) 
-            if m:
+            # Try to extract JSON from response using regex
+            match = re.search(r'\{.*\}', response, re.DOTALL)
+            if match:
                 try:
-                    self.script = json.loads(m.group(1))
+                    m = json.loads(match.group(0))
+                    self.script = m
                     return self.script
                 except Exception as e2:
                     print(f"Failed to parse extracted JSON: {e2}")
