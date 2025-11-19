@@ -180,6 +180,7 @@ class HomePage(tk.Frame):
         thread.start()
 
     def ParseSyllabus(self):
+        global cSI
         prompt = """You are a curriculum planner. Parse the following SYLLABUS_TEXT into structured JSON using this format. Do not deviate from the format or add additional explanation. ONLY RETURN VALID JSON in the exact format specified below:
 
 {

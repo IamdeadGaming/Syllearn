@@ -100,7 +100,7 @@ class VideoGenerator:
         except Exception as e:
             print(f"Error generating script: {e}")
             # Try to extract JSON from response
-            m = re.search(r'(\{.*\})', response, flags=re.S)
+            m = json.loads(response) 
             if m:
                 try:
                     self.script = json.loads(m.group(1))
