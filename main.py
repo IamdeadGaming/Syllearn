@@ -32,6 +32,8 @@ class LearningPage(tk.Frame):
         super().__init__(master)
         tk.Label(self, text="Learning Page").pack()
         if isExplanation:
+            thread = threading.Thread(target=self.generate_video, args=(j, text), daemon=True)
+            thread.start()
             video_path = videogenerator.create_video(j, text)
             if video_path and os.path.exists(video_path):
                 self.video_label = tk.Label(self)
@@ -59,6 +61,17 @@ class LearningPage(tk.Frame):
             question_area.insert(tk.END, text["question"])
             question_area.config(state="disabled")
 
+    def generate_video(self, j, text):
+        global video_path
+        video_path = videogenerator.create_video(j, text)
+        self.master.after(0, self.on_video_ready, video_path)
+            
+    def on_video_ready(self, video_path):
+        if video_path and os.path.exists(video_path):
+            self.cap = cv2.VideoCapture(video_path)
+        else:
+            tk.Label(self, text="Video generation failed or file not found.").pack(pady=10)
+        
     def toggle_play(self):
         self.playing = not self.playing
         self.play_button.config(text="Pause" if self.playing else "Play")
@@ -93,6 +106,7 @@ class SectionPage(tk.Frame):
 
 class SyllabusPage(tk.Frame):
     def __init__(self,master):
+        global cSI
         super().__init__(master)
         for i in Syllabuses[cSI].JSONContent["chapters"]:
             tk.Button(self, text=i["title"], command=lambda chapter=i: self.master.show_section_page(chapter)).pack(pady=5)
@@ -133,6 +147,7 @@ class HomePage(tk.Frame):
         self.text_area.config(state="disabled")
         
     def ProcessSyllabus(self, text):
+        global cSI
         prompt = f"The following is the syllabus of a student's course. Imagine you are a teacher trying to figure out what to teach students. Please extract the actual content of the syllabus ONLY. This means you do not have to mention exactly what part of the syllabus it is, no need how the assesment works, etc.. No need overview or anything. Just pure content. For example: 1. Topic x [enter] - SUBTOPIC WITH SMALL EXPLANATION [enter] - SUBTOPIC WITH SMALL EXPLANATION and so on This means removing redundant information. Do not return anything else. This is due to some syllabuses having additional information. Please return full content of the actual syllabus though. No removing information from the syllabus. Every bullet point. ADD A HEADER FIRST THINGS FIRST REPRESENTING THE NAME OF THE SYLLABUS AND THE SUBJECT. GIVE 2 ENTER SPACES AFTER THAT. Syllabus:\n\n{text}"
         SyllasbusText = openai_client.Request(prompt)
         Syllabuses[cSI].content = SyllasbusText
@@ -140,6 +155,7 @@ class HomePage(tk.Frame):
         self.master.after(0, self.closeLoadingWindow)
     
     def ReanalyzeSyllabus(self):
+        global cSI
         self.ShowLoadingWindow("Reanalyzing Syllabus")
         Syllabuses[cSI].content = ""
         thread = threading.Thread(target=self.ProcessSyllabus, args=(self.CurrentText,))
@@ -147,6 +163,7 @@ class HomePage(tk.Frame):
         thread.start()
     
     def ExtractPDF(self):
+        global cSI
         file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf"), ("Image files", "*.png;*.jpg;*.jpeg")])
         if file_path:
             try:
@@ -164,6 +181,7 @@ class HomePage(tk.Frame):
                 messagebox.showerror("Error", f"Failed to extract text: {e}")
                 
     def SaveSyllabusAsJSON(self, SyllabusJSON, SyllabusTitle):
+        global cSI
         filename = f"{SyllabusTitle}.json"
         directory = Path(user_data_dir(APP_NAME, APP_AUTHOR))
         directory.mkdir(parents=True, exist_ok=True)
@@ -247,6 +265,7 @@ Now, here is the syllabus text to structure:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        global cSI
         self.title("Syllearn")
         self.geometry("800x1000")
         self.pages = {}
@@ -277,6 +296,7 @@ class App(tk.Tk):
         self.current_page = self.pages[f'syllabus_{syllabus_id}_{cSI}']
 
     def show_section_page(self, i):
+        global cSI
         section_id = i["title"]
         if f'section_{section_id}_{cSI}' not in self.pages:
             section_page = SectionPage(self, i)
@@ -287,6 +307,7 @@ class App(tk.Tk):
         self.current_page = self.pages[f'section_{section_id}_{cSI}']
         
     def show_learning_page(self, j):
+        global cSI
         learn_id = j["title"]
         for k in j["bullets"]:
             if f'section_{k}_{cSI}' not in self.pages:

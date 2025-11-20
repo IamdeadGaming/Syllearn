@@ -6,18 +6,16 @@ from manim import *
 from pydub import AudioSegment
 import subprocess
 import re
+import traceback
 from platformdirs import user_data_dir
 
 VOICE = "en-US-GuyNeural"
 QUALITY = "medium"
-OUTPUT_DIR = "output"
 APP_NAME = "Syllearn"
 APP_AUTHOR = "GA Studios"
 DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
 
-Path(OUTPUT_DIR).mkdir(exist_ok=True)
 Path(DIR).mkdir(exist_ok=True)
-
 
 try:
     from gtts import gTTS
@@ -57,7 +55,7 @@ class VideoGenerator:
         Topic: {self.topic}
         Content: {self.content}
 
-        Return a JSON object with this structure (ONLY JSON, no other text):
+        Return a JSON object with this structure (ONLY JSON, no other text), Doesn't have to be 4 scenes, can be more or less:
         {{
             "title": "<video title>",
             "scenes": [
@@ -87,7 +85,7 @@ class VideoGenerator:
                     "scene_number": 4,
                     "scene_type": "summary",
                     "script": "<summary of key concepts>",
-                    "duration": 5,
+                    "duration": 5,s
                     "visuals": "<key takeaways>"
                 }}
             ]
@@ -122,7 +120,7 @@ class VideoGenerator:
         audio_segments = []
 
         for scene in self.script["scenes"]:
-            narration = scene.get("script", "")
+            narration = scene["script"]
             if not narration:
                 continue
 
@@ -138,14 +136,15 @@ class VideoGenerator:
                     os.remove(str(tmp_mp3))
                     used = True
                 except Exception as e:
-                    print(f"gTTS failed: {e}")
+                    print(f"[TTS] gTTS save failed for scene {scene['scene_number']}: {e}")
+                    traceback.print_exc()
 
             if not used:
                 print(f"No TTS backend available for scene {scene['scene_number']}, skipping audio for this scene.")
                 continue
-
+            
             try:
-                audio = AudioSegment.from_wav(str(audio_file))
+                audio = AudioSegment.from_file(str(audio_file))
                 audio_segments.append(audio)
                 self.audio_files.append(str(audio_file))
                 self.duration += len(audio) / 1000
@@ -158,10 +157,11 @@ class VideoGenerator:
             for segment in audio_segments[1:]:
                 combined += segment
 
-            out_dir = Path(OUTPUT_DIR) / f"{safe_topic}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            self.audio_path = str(out_dir / "narration.mp3")
+            self.audio_path = str(audio_dir / "narration.mp3")
             combined.export(self.audio_path, format="mp3")
+            print(self.audio_path)
+        else:
+            print("For some fucking reason the list is empty.")
     
     def generate_manim_scenes(self):
         if not self.script:
@@ -234,7 +234,7 @@ class EducationalVideoSequence(Scene):
         with open(str(scene_file), 'w') as f:
             f.write(manim_code)
 
-        output_file = f"{OUTPUT_DIR}/{safe_topic}_video.mp4"
+        output_file = f"{DIR}/{safe_topic}_video.mp4"
 
         try:
             cmd = [
@@ -250,15 +250,12 @@ class EducationalVideoSequence(Scene):
 
             video_file = DIR / "EducationalVideoSequence.mp4"
             if self.audio_files:
-                # Combine audio files if available
-                self.combine_audio_files()
                 if self.audio_path and os.path.exists(self.audio_path):
                     self.add_audio_to_video(str(video_file), output_file)
                 else:
                     os.rename(str(video_file), output_file)
                     print(f"Video saved to {output_file} (no combined audio)")
             else:
-                # No audio, just move the video file
                 os.rename(str(video_file), output_file)
                 print(f"Video saved to {output_file} (no audio)")
 
@@ -269,30 +266,6 @@ class EducationalVideoSequence(Scene):
             print(f"Error rendering video: {e}")
             return None
     
-    def combine_audio_files(self):
-        if not self.audio_files:
-            return
-
-        audio_segments = []
-        for audio_file in self.audio_files:
-            if os.path.exists(audio_file):
-                try:
-                    audio = AudioSegment.from_wav(audio_file)
-                    audio_segments.append(audio)
-                except Exception as e:
-                    print(f"Failed to load audio file {audio_file}: {e}")
-
-        if audio_segments:
-            combined = audio_segments[0]
-            for segment in audio_segments[1:]:
-                combined += segment
-
-            safe_topic = re.sub(r'[<>:"/\\|?*]', '_', self.topic)[:120]
-            out_dir = Path(OUTPUT_DIR) / f"{safe_topic}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            self.audio_path = str(out_dir / "narration.mp3")
-            combined.export(self.audio_path, format="mp3")
-            print(f"Combined audio saved to {self.audio_path}")
 
     def add_audio_to_video(self, video_file, output_file):
         try:
