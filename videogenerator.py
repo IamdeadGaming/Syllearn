@@ -54,7 +54,11 @@ class VideoGenerator:
 
         Topic: {self.topic}
         Content: {self.content}
-
+        
+        Make it as long as required, for as long as the entire content is covered.
+        Make duration of each scene appropriate to the amount of content, for a text to speech narration speed of about 130 words per minute (gTTS).
+        Remember to create a new scene every sentence so that the text is fully visible
+        Title should be relatively short so that it fits. (<6 words ideally)
         Return a JSON object with this structure (ONLY JSON, no other text), Doesn't have to be 4 scenes, can be more or less:
         {{
             "title": "<video title>",
@@ -85,7 +89,7 @@ class VideoGenerator:
                     "scene_number": 4,
                     "scene_type": "summary",
                     "script": "<summary of key concepts>",
-                    "duration": 5,s
+                    "duration": 5,
                     "visuals": "<key takeaways>"
                 }}
             ]
@@ -182,39 +186,37 @@ class EducationalVideoSequence(Scene):
                 scenes_code += f"""
         # Scene {scene['scene_number']}: Title
         title = Text("{scene['title'] if 'title' in scene else self.topic}", font_size=60)
-        subtitle = Text("{visuals}", font_size=30)
-        subtitle.next_to(title, DOWN)
         
         self.play(Write(title))
-        self.play(Write(subtitle))
-        self.wait({scene.get('duration', 3)})
-        self.play(FadeOut(title), FadeOut(subtitle))
+
+        self.wait({scene.get('duration')})
+        self.play(FadeOut(title))
 """
             
             elif scene_type == "explanation":
                 scenes_code += f"""
         # Scene {scene['scene_number']}: Explanation
-        text = Text("{script[:100]}...", font_size=24)
+        text = Text("{script}", font_size=24)
         self.play(Write(text))
-        self.wait({scene.get('duration', 10)})
+        self.wait({scene.get('duration')})
         self.play(FadeOut(text))
 """
             
             elif scene_type == "example":
                 scenes_code += f"""
         # Scene {scene['scene_number']}: Example
-        example_text = Text("{visuals}", font_size=24)
+        example_text = Text("{script}", font_size=24)
         self.play(Write(example_text))
-        self.wait({scene.get('duration', 15)})
+        self.wait({scene.get('duration')})
         self.play(FadeOut(example_text))
 """
 
             elif scene_type == "summary":
                 scenes_code += f"""
         # Scene {scene['scene_number']}: Summary
-        summary_text = Text("{visuals}", font_size=24)
+        summary_text = Text("{script}", font_size=24)
         self.play(Write(summary_text))
-        self.wait({scene.get('duration', 5)})
+        self.wait({scene.get('duration')})
         self.play(FadeOut(summary_text))
 """
         
@@ -225,45 +227,75 @@ class EducationalVideoSequence(Scene):
             raise ValueError("Script not generated. Call generate_script() first.")
 
         safe_topic = re.sub(r'[<>:"/\\|?*]', '_', self.topic)[:120]
+        
         scene_dir = DIR / safe_topic
         scene_dir.mkdir(parents=True, exist_ok=True)
 
         manim_code = self.generate_manim_scenes()
-
         scene_file = scene_dir / "scene.py"
         with open(str(scene_file), 'w') as f:
             f.write(manim_code)
 
-        output_file = f"{DIR}/{safe_topic}_video.mp4"
+        media_dir = DIR / safe_topic / "media"
+        media_dir.mkdir(parents=True, exist_ok=True)
+
+        final_output = DIR / safe_topic / f"{safe_topic}_video.mp4"
 
         try:
             cmd = [
                 "manim",
-                "-q", quality,
-                "-p",
+                "-qm",  
+                "--media_dir", str(media_dir),  
                 "--fps", str(fps),
                 str(scene_file),
                 "EducationalVideoSequence"
             ]
 
-            subprocess.run(cmd, check=True)
+            print(f"Running Manim: {' '.join(cmd)}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(f"Manim output: {result.stdout}")
 
-            video_file = DIR / "EducationalVideoSequence.mp4"
-            if self.audio_files:
-                if self.audio_path and os.path.exists(self.audio_path):
-                    self.add_audio_to_video(str(video_file), output_file)
-                else:
-                    os.rename(str(video_file), output_file)
-                    print(f"Video saved to {output_file} (no combined audio)")
+            quality_dirs = {"l": "480p15", "m": "720p30", "h": "1080p60"}
+            quality_dir = quality_dirs.get(quality, "720p30")
+            
+            manim_video = media_dir / "videos" / "scene" / quality_dir / "EducationalVideoSequence.mp4"
+
+            if not manim_video.exists():
+                print(f"Video not found at: {manim_video}")
+                print(f"Checking alternate locations...")
+                
+                for alt_path in media_dir.rglob("EducationalVideoSequence.mp4"):
+                    print(f"Found video at: {alt_path}")
+                    manim_video = alt_path
+                    break
+                
+                if not manim_video.exists():
+                    print(f"Could not find generated video")
+                    return None
+
+            print(f"Manim video found at: {manim_video}")
+
+            if self.audio_path and os.path.exists(self.audio_path):
+                print(f"Adding audio from: {self.audio_path}")
+                self.add_audio_to_video(str(manim_video), str(final_output))
             else:
-                os.rename(str(video_file), output_file)
-                print(f"Video saved to {output_file} (no audio)")
+                import shutil
+                shutil.copy(str(manim_video), str(final_output))
+                print(f"Video saved to {final_output} (no audio)")
 
-            print(f"Video saved to {output_file}")
-            return output_file
+            print(f"Final video saved to: {final_output}")
+            return str(final_output)
 
         except subprocess.CalledProcessError as e:
             print(f"Error rendering video: {e}")
+            if e.stdout:
+                print(f"Stdout: {e.stdout}")
+            if e.stderr:
+                print(f"Stderr: {e.stderr}")
+            return None
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            traceback.print_exc()
             return None
     
 
@@ -289,7 +321,11 @@ class EducationalVideoSequence(Scene):
             print(f"Error adding audio to video: {e}")
 
 def create_video(topic: str, content: str):
-
+    retopic = re.sub(r'[<>:"/\\|?*]', '_', topic)[:120]
+    dir = DIR / retopic / f"{retopic}_video.mp4"
+    if (dir).exists():
+        print("Video already exists, skipping generation.")
+        return str(DIR / retopic / f"{retopic}_video.mp4")
     if not MANIM_AVAILABLE:
         print("Manim not available, skipping video generation.")
         return None
@@ -311,7 +347,7 @@ def create_video(topic: str, content: str):
         print(f"Error generating audio: {e}")
 
     print("Rendering video...")
-    video_path = generator.render_video(quality="m", fps=30)
+    video_path = generator.render_video(fps=30)
 
     return video_path
 
