@@ -41,10 +41,22 @@ class OpenAIProxy:
             print(f"Request failed: {e}")
             return None
         
-def Request(prompt):
+def Request(prompt, retries=2):
     proxy = OpenAIProxy(
         supabase_url="https://bqejpjyrpcqqgtvxeeds.supabase.co/functions/v1/Open-AI-Request-Handler",
         supabase_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJxZWpwanlycGNxcWd0dnhlZWRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4NzY0MzAsImV4cCI6MjA3NzQ1MjQzMH0._Xe84oZ3Sm1spV_ZUfnUYI-xfhQdlAaNmdsDjMmDtvg"
     )
-    response = proxy.chat(prompt, model="gpt-4o")
-    return response
+    
+    for attempt in range(retries):
+        try:
+            response = proxy.chat(prompt, model="gpt-4o-mini")
+            if response and response.strip():
+                return response
+            print(f"Empty response on attempt {attempt + 1}/{retries}, retrying...")
+        except Exception as e:
+            print(f"Attempt {attempt + 1}/{retries} failed: {e}")
+        
+        import time
+        time.sleep(1)
+    
+    raise RuntimeError(f"Failed to get response after {retries} attempts")
