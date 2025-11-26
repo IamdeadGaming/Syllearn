@@ -28,25 +28,38 @@ class Syllabus:
         self.JSONContent = {}               
 
 class QuestionPage(tk.Frame):
-    def __init__(self, master, learn_id: str, text: str):
+    def __init__(self, master, learn_id: str, text: str, qnum, totalq):
         super().__init__(master)
+        self.learn_id = learn_id
+        self.text = text
         tk.Label(self, text="Question Page").pack()
         tk.Label(self, text="Question:").pack(pady=5)
         question_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=10)
         question_area.pack(pady=10)
         question_area.insert(tk.END, text["question"])
         question_area.config(state="disabled")
-        tk.Button(self, text=text["options"][0], command=lambda: self.check_answer, args=(1, text)).pack(pady=5)
-        tk.Button(self, text=text["options"][1], command=lambda: self.check_answer, args=(2, text)).pack(pady=5)
-        tk.Button(self, text=text["options"][2], command=lambda: self.check_answer, args=(3, text)).pack(pady=5)
-        tk.Button(self, text=text["options"][3], command=lambda: self.check_answer, args=(4, text)).pack(pady=5)
-        tk.Button(self, text="Back to learning", command=lambda: self.master.show_learning_page(learn_id)).pack(pady=5)
         
-    def check_answer(self, selected_option: int, text):
-        if selected_option == int(text["answer"]):
+        for i, option in enumerate(text["options"], 1):
+            tk.Button(self, text=option, 
+                     command=lambda opt=i: self.check_answer(opt, text["answer"])).pack(pady=5)
+        
+        tk.Button(self, text="Back to learning", 
+                 command=lambda: self.master.show_learning_page({"content": learn_id})).pack(pady=5, anchor="se", padx=10)
+        if qnum<totalq-1:
+            tk.Button(self, text="Next Question", 
+                     command=lambda: self.master.show_question_page({"content": learn_id}, qnum+1)).pack(pady=5, anchor="se", padx=10)
+        
+    def check_answer(self, selected_option: int, correct_answer: str):
+        try:
+            correct_num = int(correct_answer)
+        except (ValueError, TypeError):
+            messagebox.showerror("Error", f"Invalid answer format: {correct_answer}")
+            return
+            
+        if selected_option == correct_num:
             messagebox.showinfo("Result", "Correct!")
         else:
-            messagebox.showinfo("Result", f'Incorrect! The correct answer was option {text["answer"]}.')
+            messagebox.showinfo("Result", f"Incorrect! The correct answer was option {correct_answer}.")
 
 class LearningPage(tk.Frame):
     def __init__(self, master, isExplanation: bool, topic, text: str, originaltext):
@@ -211,17 +224,6 @@ class HomePage(tk.Frame):
                 thread.start()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to extract text: {e}")
-                
-    def SaveSyllabusAsJSON(self, SyllabusJSON, SyllabusTitle):
-        global cSI
-        filename = f"{SyllabusTitle}.json"
-        directory = Path(user_data_dir(APP_NAME, APP_AUTHOR))
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / filename
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(SyllabusJSON, f, ensure_ascii=False, indent=4)
-            Syllabuses[cSI].JSONContent = SyllabusJSON
-        tk.Button(self, text=Syllabuses[-1].title, command=lambda idx=cSI: self.master.show_syllabus_page(idx)).pack(pady=5, padx=10, anchor="w")
             
     def StartParseSyllabus(self):
         self.ShowLoadingWindow("Parsing Syllabus to JSON")
@@ -262,7 +264,6 @@ Rules:
 Now, here is the syllabus text to structure:
 """
 
-
         prompt = prompt + Syllabuses[cSI].content
         ParsedSyllabus = openai_client.Request(prompt)
         try:
@@ -273,6 +274,14 @@ Now, here is the syllabus text to structure:
                 self.master.after(0, self.closeLoadingWindow)
                 raise RuntimeError("LLM did not produce valid JSON output:\n" + ParsedSyllabus[:500])
             ParsedSyllabusJSON = json.loads(m.group(1))
+
+        for chapter in ParsedSyllabusJSON.get("chapters", []):
+            for subchapter in chapter.get("subchapters", []):
+                for bullet in subchapter.get("bullets", []):
+                    if "explanation" not in bullet:
+                        bullet["explanation"] = None
+                    if "questions" not in bullet:
+                        bullet["questions"] = None
 
         self.master.after(0, self.closeLoadingWindow)
 
@@ -290,16 +299,17 @@ Now, here is the syllabus text to structure:
             title = datetime.now().strftime("syllabus_%Y%m%d_%H%M%S")
             
         Syllabuses[cSI].title = re.sub(r'[<>:"/\\|?*]', '_', title)[:120]  
-        self.SaveSyllabusAsJSON(ParsedSyllabusJSON, Syllabuses[cSI].title)
-        
-                   
+        self.master.save_current_syllabus()
         
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         global cSI
         self.title("Syllearn")
-        self.geometry("800x1000")
+        self.geometry("880x1080")
+        tk.Button(self,
+                     text="Back to Home",
+                     command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
         self.pages = {}
         self.home_page = HomePage(self)
         self.pages['home'] = self.home_page
@@ -311,7 +321,6 @@ class App(tk.Tk):
             Syllabuses[-1].title = syllabus["syllabus_title"]
             cSI = len(Syllabuses) - 1
             tk.Button(self.home_page, text=Syllabuses[cSI].title, command=lambda idx=cSI: self.show_syllabus_page(idx)).pack(pady=5, padx=10, anchor="w")
-            
         
     def preload_learning_pages(self, subchapters):
         global cSI
@@ -321,15 +330,23 @@ class App(tk.Tk):
                 key = f'learn_{learn_id}_explanation_{cSI}'
 
                 if key not in self.pages:
-                    def load_learning_page(lid=learn_id, sc=subchapter):
-                        text = openai_client.Request(f"Based on the following syllabus content, provide a detailed explanation for it, including its ins and outs. ONLY RETURN THE EXPLANATION NOTHING ELSE: {lid}")
+                    def load_learning_page(lid=learn_id, sc=subchapter, bul=bullet):
+                        if "explanation" in bul and bul["explanation"]:
+                            text = bul["explanation"]
+                            print(f"Loaded explanation from cache: {lid}")
+                        else:
+                            text = openai_client.Request(f"Based on the following syllabus content, provide a detailed explanation for it, including its ins and outs. ONLY RETURN THE EXPLANATION NOTHING ELSE: {lid}")
+                            # Save
+                            bul["explanation"] = text
+                            self.save_current_syllabus()
+                        
                         learn_page = LearningPage(self, True, lid, text, sc)
                         self.pages[f'learn_{lid}_explanation_{cSI}'] = learn_page
                         print(f"Preloaded learning page: {lid}")
 
                     thread = threading.Thread(target=load_learning_page, daemon=True)
                     thread.start()
-    
+
     def preload_question_pages(self, subchapters):
         global cSI
         for subchapter in subchapters:
@@ -354,7 +371,7 @@ class App(tk.Tk):
                             try:
                                 question_response = openai_client.Request(question_prompt)
                                 question_data = json.loads(question_response)
-                                question_page = QuestionPage(self, lid, question_data)
+                                question_page = QuestionPage(self, lid, question_data, q_idx, total_q)
                                 self.pages[f"learn_{lid}_question_{q_idx}_{cSI}"] = question_page
                                 print(f"Preloaded question {q_idx + 1}/{total_q} for: {lid}")
                             except Exception as e:
@@ -369,9 +386,6 @@ class App(tk.Tk):
         syllabus_id = Syllabuses[cSI].title
         if f'syllabus_{syllabus_id}_{cSI}' not in self.pages:
             syllabus_page = SyllabusPage(self)
-            tk.Button(syllabus_page,
-                     text="Back to Home",
-                     command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
             self.pages[f'syllabus_{syllabus_id}_{cSI}'] = syllabus_page
         self.current_page.pack_forget()
         self.pages[f'syllabus_{syllabus_id}_{cSI}'].pack(fill="both", expand=True)
@@ -382,11 +396,11 @@ class App(tk.Tk):
         section_id = i["title"]
         if f'section_{section_id}_{cSI}' not in self.pages:
             section_page = SectionPage(self, i)
-            tk.Button(section_page, text="Back to Home", command=lambda: self.return_to_home()).pack(pady=5, anchor="w", padx=10)
             self.pages[f'section_{section_id}_{cSI}'] = section_page
 
             subchapters = i.get("subchapters", [])
             self.preload_learning_pages(subchapters)
+            self.preload_question_pages(subchapters)
         
         self.current_page.pack_forget()
         self.pages[f'section_{section_id}_{cSI}'].pack(fill="both", expand=True)
@@ -404,7 +418,6 @@ class App(tk.Tk):
         
         if key in self.pages:
             learn_page = self.pages[key]
-            tk.Button(learn_page, text="Back to Home", command=lambda: self.return_to_home()).pack(anchor="w", padx=10)
             self.current_page.pack_forget()
             learn_page.pack(fill="both", expand=True)
             self.current_page = learn_page
@@ -425,7 +438,6 @@ class App(tk.Tk):
         
         if key in self.pages:
             learn_page = self.pages[key]
-            tk.Button(learn_page, text="Back to Home", command=lambda: self.return_to_home()).pack(anchor="w", padx=10)
             self.current_page.pack_forget()
             learn_page.pack(fill="both", expand=True)
             self.current_page = learn_page
@@ -443,8 +455,34 @@ class App(tk.Tk):
 
         if any(f"learn_{learn_id}_question_" in key for key in self.pages.keys()):
             return
-    
+
         def load_questions_batch(lid=learn_id):
+            # Find the bullet containing this content
+            bullet = None
+            subchapter = None
+            for chapter in Syllabuses[cSI].JSONContent.get("chapters", []):
+                for sc in chapter.get("subchapters", []):
+                    for bul in sc.get("bullets", []):
+                        if bul["content"] == lid:
+                            bullet = bul
+                            subchapter = sc
+                            break
+        
+            if not bullet:
+                print(f"Bullet not found for: {lid}")
+                return
+
+            # Check if questions already cached in the bullet
+            if "questions" in bullet and bullet["questions"]:
+                print(f"Loading {len(bullet['questions'])} questions from cache for: {lid}")
+                for q_idx, question_data in enumerate(bullet["questions"]):
+                    key = f"learn_{lid}_question_{q_idx}_{cSI}"
+                    if key not in self.pages:
+                        question_page = QuestionPage(self, lid, question_data, q_idx, len(bullet["questions"]))
+                        self.pages[key] = question_page
+                return
+
+            # Generate new questions if not cached
             num_questions_prompt = f"How many practice questions should be generated to test understanding of this topic? Reply with ONLY a single integer between 1 and 5: {lid}"
             try:
                 num_questions_str = openai_client.Request(num_questions_prompt).strip()
@@ -458,8 +496,9 @@ class App(tk.Tk):
             except Exception as e:
                 print(f"Failed to determine question count for {lid}: {e}")
                 num_questions = 3
+            generated_questions = []
+            questions_completed = [False]  # Use list to allow modification in nested function
 
-            # Generate each question with delay
             for qnum in range(num_questions):
                 key = f"learn_{lid}_question_{qnum}_{cSI}"
                 
@@ -476,7 +515,9 @@ class App(tk.Tk):
                             print(f"Raw response for question {q_idx + 1}: {question_response[:100]}...")
                             
                             question_data = json.loads(question_response)
-                            question_page = QuestionPage(self, lid, question_data)
+                            generated_questions.append(question_data)
+                            
+                            question_page = QuestionPage(self, lid, question_data, q_idx, total_q)
                             self.pages[f"learn_{lid}_question_{q_idx}_{cSI}"] = question_page
                             print(f"Successfully preloaded question {q_idx + 1}/{total_q} for: {lid}")
                         except json.JSONDecodeError as e:
@@ -493,6 +534,19 @@ class App(tk.Tk):
         thread = threading.Thread(target=load_questions_batch, daemon=True)
         thread.start()
         
+    def save_current_syllabus(self):
+        global cSI
+        filename = f"{Syllabuses[cSI].title}.json"
+        directory = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / filename
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(Syllabuses[cSI].JSONContent, f, ensure_ascii=False, indent=4)
+            print(f"Saved syllabus cache: {path}")
+        except Exception as e:
+            print(f"Failed to save syllabus: {e}")
+    
 if __name__ == "__main__":
     app = App()
     app.mainloop()
