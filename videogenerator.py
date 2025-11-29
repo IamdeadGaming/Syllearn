@@ -8,7 +8,8 @@ import subprocess
 import re
 import traceback
 from platformdirs import user_data_dir
-
+import re
+import os
 VOICE = "en-US-GuyNeural"
 QUALITY = "medium"
 APP_NAME = "Syllearn"
@@ -40,13 +41,15 @@ except Exception:
 
 
 class VideoGenerator:
-    def __init__(self, topic: str, content: str):
+    def __init__(self, topic: str, content: str, syllabus, chapter):
         self.topic = topic
         self.content = content
         self.script = None
         self.audio_path = None
         self.audio_files = []
         self.duration = 0
+        self.syllabus = syllabus
+        self.chapter = chapter
         
     def generate_script(self):
         prompt = f"""You are an expert educator like the Organic Chemistry Tutor.
@@ -96,7 +99,7 @@ class VideoGenerator:
         }}"""
 
         try:
-            response = openai_client.Request(prompt)
+            response = openai_client.Request(prompt, model="gpt-4o-mini")
             self.script = json.loads(response)
             return self.script
         except Exception as e:
@@ -118,54 +121,69 @@ class VideoGenerator:
             raise ValueError("Script not generated. Call generate_script() first.")
 
         safe_topic = re.sub(r'[<>:"/\\|?*]', '_', self.topic)[:120]
-        audio_dir = DIR / safe_topic
+        audio_dir = DIR / self.syllabus.title / self.chapter / safe_topic
         audio_dir.mkdir(parents=True, exist_ok=True)
 
+        self.audio_path = str(audio_dir / "narration.mp3")
+        
+        # Return cached audio if it exists
+        if os.path.exists(self.audio_path):
+            print(f"Using cached audio: {self.audio_path}")
+            return self.audio_path
+        
         audio_segments = []
 
         for scene in self.script["scenes"]:
-            narration = scene["script"]
-            if not narration:
+            narration = scene.get("script", "")
+            if not narration or not narration.strip():
+                print(f"Skipping scene {scene['scene_number']} - no narration")
                 continue
 
-            audio_file = audio_dir / f"audio_scene_{scene['scene_number']}.wav"
-            used = False
-
-            if not used and GTTS_AVAILABLE:
-                try:
-                    tts = gTTS(narration, lang="en")
-                    tmp_mp3 = audio_file.with_suffix('.mp3')
-                    tts.save(str(tmp_mp3))
-                    AudioSegment.from_file(str(tmp_mp3)).export(str(audio_file), format="wav")
-                    os.remove(str(tmp_mp3))
-                    used = True
-                except Exception as e:
-                    print(f"[TTS] gTTS save failed for scene {scene['scene_number']}: {e}")
-                    traceback.print_exc()
-
-            if not used:
-                print(f"No TTS backend available for scene {scene['scene_number']}, skipping audio for this scene.")
-                continue
+            audio_file = audio_dir / f"audio_scene_{scene['scene_number']}.mp3"
             
+            # Skip if already exists
+            if audio_file.exists():
+                print(f"Audio already exists for scene {scene['scene_number']}, loading from cache...")
+                try:
+                    audio = AudioSegment.from_file(str(audio_file))
+                    audio_segments.append(audio)
+                except Exception as e:
+                    print(f"Failed to load cached audio for scene {scene['scene_number']}: {e}")
+                continue
+
+            # Generate using gTTS
             try:
+                import time
+                from gtts import gTTS
+                
+                time.sleep(2)  # Rate limiting between requests
+                
+                print(f"Generating audio for scene {scene['scene_number']}: {narration[:50]}...")
+                tts = gTTS(text=narration, lang='en', slow=False)
+                tts.save(str(audio_file))
+                
                 audio = AudioSegment.from_file(str(audio_file))
                 audio_segments.append(audio)
-                self.audio_files.append(str(audio_file))
-                self.duration += len(audio) / 1000
                 print(f"Generated audio for scene {scene['scene_number']}")
+                
             except Exception as e:
-                print(f"Failed to load audio for scene {scene['scene_number']}: {e}")
+                print(f"[TTS] gTTS failed for scene {scene['scene_number']}: {e}")
+                traceback.print_exc()
+                continue
 
         if audio_segments:
             combined = audio_segments[0]
             for segment in audio_segments[1:]:
                 combined += segment
 
-            self.audio_path = str(audio_dir / "narration.mp3")
             combined.export(self.audio_path, format="mp3")
-            print(self.audio_path)
+            print(f"Combined audio saved to: {self.audio_path}")
+            return self.audio_path
         else:
-            print("For some fucking reason the list is empty.")
+            print("No audio segments generated - creating silent placeholder")
+            silent = AudioSegment.silent(duration=5000)
+            silent.export(self.audio_path, format="mp3")
+            return self.audio_path
     
     def generate_manim_scenes(self):
         if not self.script:
@@ -222,32 +240,49 @@ class EducationalVideoSequence(Scene):
         
         return scenes_code
     
-    def render_video(self, quality="m", fps=30):
+    def render_video(self, fps=30):
+        """Render the complete video with audio"""
         if not self.script:
             raise ValueError("Script not generated. Call generate_script() first.")
-
-        safe_topic = re.sub(r'[<>:"/\\|?*]', '_', self.topic)[:120]
         
-        scene_dir = DIR / safe_topic
-        scene_dir.mkdir(parents=True, exist_ok=True)
-
-        manim_code = self.generate_manim_scenes()
-        scene_file = scene_dir / "scene.py"
-        with open(str(scene_file), 'w') as f:
-            f.write(manim_code)
-
-        media_dir = DIR / safe_topic / "media"
-        media_dir.mkdir(parents=True, exist_ok=True)
-
-        final_output = DIR / safe_topic / f"{safe_topic}_video.mp4"
-
+        if not self.audio_path or not os.path.exists(self.audio_path):
+            print(f"Warning: Audio not found at: {self.audio_path}")
+        
+        # Sanitize all paths
+        safe_syllabus = re.sub(r'[<>:"/\\|?*™®©]', '_', self.syllabus.title)
+        safe_chapter = re.sub(r'[<>:"/\\|?*™®©]', '_', self.chapter)
+        safe_topic = re.sub(r'[<>:"/\\|?*™®©]', '_', self.topic)[:120]
+        
+        output_dir = DIR / safe_syllabus / safe_chapter / safe_topic
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        output_file = str(output_dir / f"{safe_topic}_video.mp4")
+        temp_video = str(output_dir / f"{safe_topic}_temp.mp4")
+        
+        # Check if video already exists
+        if os.path.exists(output_file):
+            print(f"Video already exists: {output_file}")
+            return output_file
+        
         try:
+            print("Rendering Manim video...")
+
+            manim_code = self.generate_manim_scenes()
+            
+            if not manim_code:
+                print("Failed to generate Manim scenes")
+                return None
+            
+            # Save to temp file with sanitized name
+            scene_file = str(output_dir / "scene.py")
+            with open(scene_file, 'w', encoding='utf-8') as f:
+                f.write(manim_code)
+
             cmd = [
                 "manim",
-                "-qm",  
-                "--media_dir", str(media_dir),  
+                "-ql",  # low quality
                 "--fps", str(fps),
-                str(scene_file),
+                scene_file,
                 "EducationalVideoSequence"
             ]
 
@@ -256,15 +291,15 @@ class EducationalVideoSequence(Scene):
             print(f"Manim output: {result.stdout}")
 
             quality_dirs = {"l": "480p15", "m": "720p30", "h": "1080p60"}
-            quality_dir = quality_dirs.get(quality, "720p30")
+            quality_dir = quality_dirs.get("low", "720p30")
             
-            manim_video = media_dir / "videos" / "scene" / quality_dir / "EducationalVideoSequence.mp4"
+            manim_video = output_dir / "videos" / "scene" / quality_dir / "EducationalVideoSequence.mp4"
 
             if not manim_video.exists():
                 print(f"Video not found at: {manim_video}")
                 print(f"Checking alternate locations...")
                 
-                for alt_path in media_dir.rglob("EducationalVideoSequence.mp4"):
+                for alt_path in output_dir.rglob("EducationalVideoSequence.mp4"):
                     print(f"Found video at: {alt_path}")
                     manim_video = alt_path
                     break
@@ -277,27 +312,22 @@ class EducationalVideoSequence(Scene):
 
             if self.audio_path and os.path.exists(self.audio_path):
                 print(f"Adding audio from: {self.audio_path}")
-                self.add_audio_to_video(str(manim_video), str(final_output))
+                self.add_audio_to_video(str(manim_video), str(output_dir))
             else:
                 import shutil
-                shutil.copy(str(manim_video), str(final_output))
-                print(f"Video saved to {final_output} (no audio)")
+                shutil.copy(str(manim_video), str(output_dir))
+                print(f"Video saved to {output_dir} (no audio)")
 
-            print(f"Final video saved to: {final_output}")
-            return str(final_output)
+            print(f"Final video saved to: {output_dir}")
+            return str(output_dir)
 
         except subprocess.CalledProcessError as e:
             print(f"Error rendering video: {e}")
-            if e.stdout:
-                print(f"Stdout: {e.stdout}")
-            if e.stderr:
-                print(f"Stderr: {e.stderr}")
             return None
         except Exception as e:
             print(f"Unexpected error: {e}")
             traceback.print_exc()
             return None
-    
 
     def add_audio_to_video(self, video_file, output_file):
         try:
@@ -313,43 +343,53 @@ class EducationalVideoSequence(Scene):
                 output_file,
                 "-y"
             ]
-
+            
+            print(f"Adding audio with ffmpeg...")
             subprocess.run(cmd, check=True, capture_output=True)
-            print(f"Audio added to video: {output_file}")
-
+            print(f"Audio added to video successfully")
+            
         except subprocess.CalledProcessError as e:
             print(f"Error adding audio to video: {e}")
 
-def create_video(topic: str, content: str):
-    retopic = re.sub(r'[<>:"/\\|?*]', '_', topic)[:120]
-    dir = DIR / retopic / f"{retopic}_video.mp4"
-    if (dir).exists():
-        print("Video already exists, skipping generation.")
-        return str(DIR / retopic / f"{retopic}_video.mp4")
-    if not MANIM_AVAILABLE:
-        print("Manim not available, skipping video generation.")
+def create_video(topic: str, content: str, syllabus, chapter):
+    safe_syllabus = re.sub(r'[<>:"/\\|?*™®©]', '_', syllabus.title)
+    safe_chapter = re.sub(r'[<>:"/\\|?*™®©]', '_', chapter)
+    safe_topic = re.sub(r'[<>:"/\\|?*™®©]', '_', topic)[:120]
+    
+    output_dir = DIR / safe_syllabus / safe_chapter / safe_topic
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    video_file = output_dir / f"{safe_topic}_video.mp4"
+    if video_file.exists():
+        print(f"Video already exists: {video_file}")
+        return str(video_file)
+    
+    if not MANIM_AVAILABLE or not FFMPEG_AVAILABLE:
+        print("Manim or FFmpeg not available, skipping video generation.")
         return None
 
-    if not FFMPEG_AVAILABLE:
-        print("FFmpeg not available, skipping video generation.")
-        return None
-
-    generator = VideoGenerator(topic, content)
-
-    print(f"Generating script for: {topic}")
-    if not generator.generate_script():
-        return None
-
-    print("Generating audio narration...")
     try:
-        generator.generate_audio()
+        generator = VideoGenerator(topic, content, syllabus, chapter)
+
+        print(f"Generating script for: {topic}")
+        if not generator.generate_script():
+            return None
+
+        print("Generating audio narration...")
+        try:
+            generator.generate_audio()
+        except Exception as e:
+            print(f"Error generating audio: {e}")
+            return None
+
+        print("Rendering video...")
+        video_path = generator.render_video(fps=30)
+
+        return video_path
     except Exception as e:
-        print(f"Error generating audio: {e}")
-
-    print("Rendering video...")
-    video_path = generator.render_video(fps=30)
-
-    return video_path
+        print(f"Error creating video: {e}")
+        traceback.print_exc()
+        return None
 
 
 

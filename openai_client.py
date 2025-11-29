@@ -24,7 +24,7 @@ class OpenAIProxy:
                 self.url,
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=120
             )
             
             if response.status_code == 200:
@@ -41,15 +41,15 @@ class OpenAIProxy:
             print(f"Request failed: {e}")
             return None
         
-def Request(prompt, retries=2):
+def Request(prompt, model, retries=2):
     proxy = OpenAIProxy(
         supabase_url="https://bqejpjyrpcqqgtvxeeds.supabase.co/functions/v1/Open-AI-Request-Handler",
         supabase_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJxZWpwanlycGNxcWd0dnhlZWRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4NzY0MzAsImV4cCI6MjA3NzQ1MjQzMH0._Xe84oZ3Sm1spV_ZUfnUYI-xfhQdlAaNmdsDjMmDtvg"
-    )
+    )   
     
     for attempt in range(retries):
         try:
-            response = proxy.chat(prompt, model="gpt-4o-mini")
+            response = proxy.chat(prompt, model=model)
             if response and response.strip():
                 return response
             print(f"Empty response on attempt {attempt + 1}/{retries}, retrying...")
