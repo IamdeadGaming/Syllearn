@@ -8,6 +8,7 @@ import os
 import videogenerator
 import cv2
 import time
+import timedelta
 import pygame
 from pathlib import Path
 from datetime import datetime
@@ -21,6 +22,7 @@ APP_NAME = "Syllearn"
 APP_AUTHOR = "GA Studios"
 cSI = 0 #Current Syllabus Index
 mistakes = {}  # Global mistakes dictionary
+streak_data = {"last_date": None, "streak_count": 0}
 
 def sanitize_path(text):
     # Remove/replace problematic characters
@@ -73,6 +75,9 @@ class MistakesPage(tk.Frame):
                      command=lambda: self.master.show_mistakes_page(chapter_title, qnum + 1)).pack(side="right", padx=5)
     
     def check_answer(self, selected_option: int, correct_answer: str):  
+        current_qnum = self.qnum
+        current_totalq = self.totalq
+        current_chapter = self.chapter_title
         try:
             correct_answer = int(correct_answer) + 1
         except (ValueError, TypeError):
@@ -82,9 +87,10 @@ class MistakesPage(tk.Frame):
         if selected_option == correct_answer:
             messagebox.showinfo("Result", "Correct!")
             self.remove_mistake()
+            self.after(100, lambda: self.handle_nav_post_removal(current_qnum, current_totalq, current_chapter))
         else:
             messagebox.showinfo("Result", f"Incorrect! The correct answer was option {correct_answer}.")
-
+            
     def remove_mistake(self):
         global cSI
         global mistakes
@@ -116,6 +122,24 @@ class MistakesPage(tk.Frame):
                     section_page = self.master.pages[section_key]
                     section_page.add_mistakes_button()
                     print("Updated section page mistakes button")
+        
+    def handle_nav_post_removal(self, original_num, original_totalq, chapter_title):
+        global cSI
+        global mistakes
+                
+        safe_syllabus = sanitize_path(Syllabuses[cSI].title)
+        safe_chapter = sanitize_path(chapter_title)
+        current_totalq = 0
+        if safe_syllabus in mistakes and safe_chapter in mistakes[safe_syllabus]:
+            current_totalq = mistakes[safe_syllabus][safe_chapter]["number"]
+            
+        if current_totalq == 0:
+            self.master.return_to_home()
+            self.master.update_learning_streak()
+        elif original_num < current_totalq:
+            self.master.show_mistakes_page(chapter_title, original_num)
+        else:
+            self.master.show_mistakes_page(chapter_title, current_totalq - 1)
         
 class QuestionPage(tk.Frame):
     def __init__(self, master, learn_id: str, text: str, qnum, totalq):
@@ -162,6 +186,8 @@ class QuestionPage(tk.Frame):
             
         try:           
             if hasattr(self, "qnum") and hasattr(self, "totalq") and self.qnum == self.totalq - 1:
+                self.master.update_learning_streak()
+                
                 result = self.advance_bullet_index()
                 if result:
                     chapter_title, subchapter_title = result
@@ -223,7 +249,7 @@ class QuestionPage(tk.Frame):
         chapter_title = None
         subchapter_title = None
         subchapter_obj = None
-
+        
         for chapter in Syllabuses[cSI].JSONContent.get("chapters", []):
             for sub in chapter.get("subchapters", []):
                 for bullet in sub.get("bullets", []):
@@ -628,6 +654,7 @@ class HomePage(tk.Frame):
         self.pack(fill="both", expand=True)
         self.current_text = ""
         tk.Label(self, text="Home", anchor="w").pack(pady=5, padx=10, anchor="w")
+        tk.Label(self, text = f"Learning streak: {master.get_learning_streak()} days 🔥🔥🔥", anchor="w").pack(pady=5, padx=10, anchor="w")
         tk.Label(self, text="Welcome to Syllearn", font=("Helvetica", 24)).pack(pady=20) 
         tk.Button(self, text="Upload Syllabus", command=self.ExtractPDF).pack(pady=10)      
         self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=80, height=30)
@@ -1038,6 +1065,7 @@ class App(tk.Tk):
         def load_questions_batch():
             try:
                 num_questions_prompt = f"""Generate exactly 3 distinct multiple choice questions about: {bullet['content']}
+                Double check to ensure that the answers are correct.
                 Return ONLY valid JSON in this exact format:
                 {{
                     "questions": [
@@ -1205,6 +1233,43 @@ class App(tk.Tk):
         
         tk.Label(loading_window, text=message, pady=20).pack()
         return loading_window
+    
+    def get_learning_streak(self):
+        if not (Path(user_data_dir(APP_NAME, APP_AUTHOR)) / "learning_streak.json").exists():
+            json.dump(streak_data, open(Path(user_data_dir(APP_NAME, APP_AUTHOR)) / "learning_streak.json", "w"))
+            return 0
+        with open(Path(user_data_dir(APP_NAME, APP_AUTHOR)) / "learning_streak.json", "r") as f:
+           data = json.load(f)
+        if data["last_date"] is not None and streak_data["last_date"] is not None:
+            if datetime.strptime(streak_data["last_date"], "%Y-%m-%d").date() < datetime.now().date() - timedelta(days=2):
+                streak_data["streak_count"] = 0
+                streak_data["last_date"] = datetime.now().date().strftime("%Y-%m-%d")
+                with open(Path(user_data_dir(APP_NAME, APP_AUTHOR)) / "learning_streak.json", "w") as f:
+                    json.dump(streak_data, f)
+                return 0
+        streak_data["streak_count"] = data.get("streak_count", 0)
+        streak_data["last_date"] = data.get("last_date", None)       
+        return streak_data["streak_count"]
+        
+    def update_learning_streak(self):
+        if streak_data["last_date"] is not None:
+            if last_date != today - timedelta(days=1):
+                last_date = datetime.strptime(streak_data["last_date"], "%Y-%m-%d").date()
+                today = datetime.now().date()
+                if last_date == today - timedelta(days=2):
+                    streak_count += 1
+                    streak_data["last_date"] = today.strftime("%Y-%m-%d")
+                    streak_data["streak_count"] = streak_count
+                    with open(Path(user_data_dir(APP_NAME, APP_AUTHOR)) / "learning_streak.json", "w") as f:
+                        json.dump(streak_data, f)
+                elif last_date < today - timedelta(days=2):
+                    streak_count = 0
+        else:
+            streak_count = 1
+            streak_data["last_date"] = datetime.now().date().strftime("%Y-%m-%d")
+            streak_data["streak_count"] = streak_count
+            with open(Path(user_data_dir(APP_NAME, APP_AUTHOR)) / "learning_streak.json", "w") as f:
+                json.dump(streak_data, f)
     
 if __name__ == "__main__":
     app = App()
