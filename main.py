@@ -1066,6 +1066,9 @@ class App(tk.Tk):
             try:
                 num_questions_prompt = f"""Generate exactly 3 distinct multiple choice questions about: {bullet['content']}
                 Double check to ensure that the answers are correct.
+                Re-calculate if needed.
+                Remember that we use 0-indexing for answers.
+                DO NOT RETURN WRONG ANSWERS.
                 Return ONLY valid JSON in this exact format:
                 {{
                     "questions": [
